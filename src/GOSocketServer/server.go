@@ -1,10 +1,13 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"sync"
+
+	"github.com/go-redis/redis/v8"
 )
 
 type Server struct {
@@ -26,8 +29,17 @@ func NewServer(ip string, port int) *Server {
 	return server
 }
 
+func redisClient() *redis.Client {
+	client := redis.NewClient(&redis.Options{
+		Addr:     "localhost:6379",
+		Password: "", // no password set
+		DB:       0,  // use default DB
+	})
+	return client
+}
+
 // 启动服务器的接口
-func (server *Server) Start() {
+func (server *Server) Start(redis *redis.Client) {
 	// socket监听
 	listener, err := net.Listen("tcp6", fmt.Sprintf("%s:%d", server.Ip, server.Port))
 	if err != nil {
@@ -48,23 +60,20 @@ func (server *Server) Start() {
 		}
 
 		// TODO 启动一个协程去处理
-		go server.Handler(conn)
+		go server.Handler(conn, redis)
 	}
 
 }
 
 // server.go 脚本
 
-func (server *Server) Handler(conn net.Conn) {
+func (server *Server) Handler(conn net.Conn, redis *redis.Client) {
 	// 构造User对象，NewUser全局方法在user.go脚本中
 	user := NewUser(conn, server)
-
-	// 用户上线
-	user.Online()
-
-	// 启动一个协程
 	go func() {
+
 		buf := make([]byte, 4096)
+		defer conn.Close()
 		for {
 			// 从Conn中读取消息
 			len, err := conn.Read(buf)
@@ -80,20 +89,25 @@ func (server *Server) Handler(conn net.Conn) {
 			}
 
 			// 用户针对msg进行消息处理
-			user.DoMessage(buf, len)
+			user.DoMessage(buf, len, redis)
 		}
 	}()
 }
 
 // 广播消息
-
-func (server *Server) BroadCast(user *User, msg string) {
-	//sendMsg := "[" + user.Addr + "]" + user.Name + ":" + msg
-	sendMsg := user.Name + ":" + msg
+func (server *Server) BroadCast(user *User, msg interface{}, method string) {
+	messageInfo := map[string]interface{}{
+		"method": method,
+		"msg":    msg,
+	}
+	jsonData, err := json.Marshal(messageInfo)
+	if err != nil {
+		fmt.Println("json.Marshal err:", err)
+		return
+	}
+	sendMsg := string(jsonData)
 	server.Message <- sendMsg
 }
-
-// 监听消息
 
 func (server *Server) ListenMessager() {
 	for {

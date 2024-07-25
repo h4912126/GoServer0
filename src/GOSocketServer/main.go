@@ -11,8 +11,10 @@ import (
 // main.go 脚本
 
 func StartServer() {
+
 	server := NewServer("[::]", 9527)
-	server.Start()
+	client := redisClient()
+	server.Start(client)
 }
 
 // main.go 脚本
@@ -20,6 +22,7 @@ func StartServer() {
 func main() {
 	// 启动Server
 	go StartServer()
+	// 连接Redis
 
 	// TODO 你可以写其他逻辑
 	fmt.Println("这是一个Go服务端，实现了Socket消息广播功能")
