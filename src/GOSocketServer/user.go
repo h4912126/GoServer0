@@ -110,6 +110,7 @@ func (user *User) DoMessage(buf []byte, len int, redis *redis.Client) {
 	//time.Sleep(time.Second * 5)
 	//提取用户的消息(去除'\n')
 	msg := string(buf[:len-1])
+	fmt.Println(msg)
 	sep := "&"
 	fmt.Println(msg)
 
@@ -284,11 +285,11 @@ func (user *User) AddChatRoom(redis *redis.Client, chatId string) {
 }
 
 func (user *User) GetLastChatMsg(redis *redis.Client, chatId string) string {
-	chatStr := redis.LIndex(context.Background(), "chatContent_"+chatId, -1).Val()
+	chatStr := redis.LIndex(context.Background(), "chatContent_"+chatId, 0).Val()
 	if chatStr == "" {
 		str := user.Name + " 创建了聊天室"
 		user.CreateChatRoom(redis, chatId, "公用聊天室", "head_publicRoom", str)
-		chatStr = redis.LIndex(context.Background(), "chatContent_"+chatId, -1).Val()
+		chatStr = redis.LIndex(context.Background(), "chatContent_"+chatId, 0).Val()
 	}
 	return chatStr
 
@@ -304,5 +305,5 @@ func (user *User) CreateChatRoom(redis *redis.Client, chatId string, chatRoomNam
 func (user *User) saveChatMsg(redis *redis.Client, chatId string, chatStr string) {
 	createTime := time.Now().Unix()
 	chatStr = strconv.FormatInt(createTime, 10) + "&" + user.userId + "&" + user.Name + "&" + user.UserIcon + "&" + chatId + "&" + chatStr
-	redis.RPush(context.Background(), "chatContent_"+chatId, chatStr)
+	redis.LPush(context.Background(), "chatContent_"+chatId, chatStr)
 }

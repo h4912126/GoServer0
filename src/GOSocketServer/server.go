@@ -78,6 +78,7 @@ func (server *Server) Handler(conn net.Conn, redis *redis.Client) {
 			// 从Conn中读取消息
 			len, err := conn.Read(buf)
 			if len == 0 {
+				fmt.Println("断开连接:", err)
 				// 用户下线
 				user.Offline()
 				return
