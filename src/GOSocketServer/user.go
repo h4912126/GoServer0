@@ -250,8 +250,17 @@ func (user *User) DoMessage(buf []byte, length int, redis *redis.Client) {
 			fmt.Println("strconv.ParseInt err:", err)
 			return
 		}
-		chatInfo := redis.LRange(context.Background(), "chatContent_"+chatId, startInt, endInt).Val()
-		user.WriteMessage("ChatInfoPara", chatInfo)
+		chatInfos := redis.LRange(context.Background(), "chatContent_"+chatId, startInt, endInt).Val()
+		for key, cachatInfo := range chatInfos {
+			chatInfo := strings.Split(cachatInfo, "&")
+			id := chatInfo[1]
+			name := redis.HGet(context.Background(), "userName", "userInfo_"+id).Val()
+			icon := redis.HGet(context.Background(), "userIcon", "userInfo_"+id).Val()
+			chatInfo[2] = name
+			chatInfo[3] = icon
+			chatInfos[key] = strings.Join(chatInfo, "&")
+		}
+		user.WriteMessage("ChatInfoPara", chatInfos)
 		return
 	}
 	if result1 == "createChat" {
