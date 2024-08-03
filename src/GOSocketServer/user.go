@@ -106,10 +106,10 @@ func (user *User) Offline() {
 
 // user.go 脚本
 
-func (user *User) DoMessage(buf []byte, len int, redis *redis.Client) {
+func (user *User) DoMessage(buf []byte, length int, redis *redis.Client) {
 	//time.Sleep(time.Second * 5)
 	//提取用户的消息(去除'\n')
-	msg := string(buf[:len-1])
+	msg := string(buf[:length-1])
 	fmt.Println(msg)
 	sep := "&"
 	fmt.Println(msg)
@@ -210,10 +210,23 @@ func (user *User) DoMessage(buf []byte, len int, redis *redis.Client) {
 		chatIds := user.GetUsertChatIds(redis, startInt, endInt)
 		allChatInfo := []ChatRoomInfo{}
 		for _, chatId := range chatIds {
+			ChatRoomName := redis.HGet(context.Background(), "chatRoomName", chatId).Val()
+			ChatRoomIcon := redis.HGet(context.Background(), "chatRoomIcon", chatId).Val()
+			if ChatRoomName == "PrivateChat" {
+				ids := strings.Split(chatId, "_")
+				id := "0"
+				if ids[1] == user.userId {
+					id = ids[2]
+				} else {
+					id = ids[1]
+				}
+				ChatRoomName = redis.HGet(context.Background(), "userName", "userInfo_"+id).Val()
+				ChatRoomIcon = redis.HGet(context.Background(), "userIcon", "userInfo_"+id).Val()
+			}
 			chatInfo := ChatRoomInfo{
 				ChatRoomId:      chatId,
-				ChatRoomName:    redis.HGet(context.Background(), "chatRoomName", chatId).Val(),
-				ChatRoomIcon:    redis.HGet(context.Background(), "chatRoomIcon", chatId).Val(),
+				ChatRoomName:    ChatRoomName,
+				ChatRoomIcon:    ChatRoomIcon,
 				ChatRoomContent: user.GetLastChatMsg(redis, chatId)}
 			allChatInfo = append(allChatInfo, chatInfo)
 		}
@@ -239,6 +252,48 @@ func (user *User) DoMessage(buf []byte, len int, redis *redis.Client) {
 		}
 		chatInfo := redis.LRange(context.Background(), "chatContent_"+chatId, startInt, endInt).Val()
 		user.WriteMessage("ChatInfoPara", chatInfo)
+		return
+	}
+	if result1 == "createChat" {
+		res := strings.Split(result2, "&")
+		chatId := res[0]
+		chatRoomName := res[1]
+		chatRoomIcon := res[2]
+		createString := res[3]
+		ids := strings.Split(chatId, "_")
+		length := len(ids)
+
+		user.CreateChatRoom(redis, chatId, chatRoomName, chatRoomIcon, createString)
+		if length > 1 {
+			for _, id := range ids {
+				AddChatRoom(redis, chatId, id)
+				for _, us := range user.server.OnlineMap {
+					if us.userId == id {
+						ChatRoomName := redis.HGet(context.Background(), "chatRoomName", chatId).Val()
+						if ChatRoomName == "PrivateChat" {
+							ids := strings.Split(chatId, "_")
+							id := "0"
+							if ids[1] == user.userId {
+								id = ids[2]
+							} else {
+								id = ids[1]
+							}
+							ChatRoomName = redis.HGet(context.Background(), "userName", "userInfo_"+id).Val()
+							ChatRoomIcon := redis.HGet(context.Background(), "userIcon", "userInfo_"+id).Val()
+							chatInfo := ChatRoomInfo{
+								ChatRoomId:      chatId,
+								ChatRoomName:    ChatRoomName,
+								ChatRoomIcon:    ChatRoomIcon,
+								ChatRoomContent: user.GetLastChatMsg(redis, chatId)}
+							allChatInfo := []ChatRoomInfo{}
+							allChatInfo = append(allChatInfo, chatInfo)
+							us.WriteMessage("ChatIdsPara", allChatInfo)
+						}
+
+					}
+				}
+			}
+		}
 		return
 	}
 }
@@ -273,15 +328,15 @@ func (user *User) GetUsertChatIds(redis *redis.Client, start int64, end int64) [
 
 	list := redis.LRange(context.Background(), user.userId+"_chatIds", start, end).Val()
 	if len(list) == 0 {
-		user.AddChatRoom(redis, "chatRoomId_1")
+		AddChatRoom(redis, "chatRoomId_1", user.userId)
 		list = redis.LRange(context.Background(), user.userId+"_chatIds", 0, 0).Val()
 	}
 	return list
 }
 
-func (user *User) AddChatRoom(redis *redis.Client, chatId string) {
-	redis.RPush(context.Background(), user.userId+"_chatIds", chatId)
-	redis.HSet(context.Background(), "chatMember_"+chatId, user.userId, user.userId)
+func AddChatRoom(redis *redis.Client, chatId string, userId string) {
+	redis.LPush(context.Background(), userId+"_chatIds", chatId)
+	redis.HSet(context.Background(), "chatMember_"+chatId, userId, userId)
 }
 
 func (user *User) GetLastChatMsg(redis *redis.Client, chatId string) string {
@@ -292,7 +347,6 @@ func (user *User) GetLastChatMsg(redis *redis.Client, chatId string) string {
 		chatStr = redis.LIndex(context.Background(), "chatContent_"+chatId, 0).Val()
 	}
 	return chatStr
-
 }
 func (user *User) CreateChatRoom(redis *redis.Client, chatId string, chatRoomName string, chatRoomIcon string, createString string) string {
 	redis.HSet(context.Background(), "chatRoomName", chatId, chatRoomName)
